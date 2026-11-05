@@ -157,16 +157,44 @@ function buildCalendar({ calName, sessions, includeRinkInSummary, dtstamp }) {
 // page's own origin+path so this works under any GitHub user / repo name.
 // ---------------------------------------------------------------------------
 function buildIndexHtml(feeds, meta) {
-  const rows = feeds.map(f => `
-      <tr${f.club ? ' class="club"' : ''}>
-        <td class="name">${escapeHtml(f.name)}${f.club ? ' <span class="badge">members</span>' : ''}</td>
-        <td class="count">${f.count}</td>
-        <td class="links" data-file="${escapeHtml(f.file)}">
-          <a class="sub" href="#">Subscribe</a>
-          <a class="copy" href="#">Copy link</a>
-          <a class="raw" href="${escapeHtml(f.file)}">.ics</a>
-        </td>
-      </tr>`).join('');
+  const TYPE_META = {
+    public:    { label: 'Public',    color: '#2563eb' },
+    freestyle: { label: 'Freestyle', color: '#7c3aed' },
+    training:  { label: 'Training',  color: '#d9770a' },
+    club_ice:  { label: 'Club ice',  color: '#db2777' },
+  };
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmtYmd = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return `${MONTHS[m - 1]} ${d}, ${y}`; };
+  const windowPretty = (meta.window && meta.window.includes('→'))
+    ? meta.window.split('→').map(s => fmtYmd(s.trim())).join(' – ') : escapeHtml(meta.window);
+  const u = new Date(meta.generatedAt);
+  const updatedPretty = isNaN(u) ? escapeHtml(meta.generatedAt)
+    : `${MONTHS[u.getMonth()]} ${u.getDate()}, ${u.getFullYear()}`;
+
+  const chips = (types) => Object.entries(types || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([t, n]) => {
+      const m = TYPE_META[t] || { label: t, color: '#64748b' };
+      return `<span class="chip"><i style="--c:${m.color}"></i>${escapeHtml(m.label)} ${n}</span>`;
+    }).join('');
+
+  const card = (f, featured) => `
+      <article class="card${featured ? ' featured' : ''}${f.club ? ' club' : ''}" data-file="${escapeHtml(f.file)}">
+        <div class="card-top">
+          <h3>${escapeHtml(f.name)}${f.club ? '<span class="badge">members only</span>' : ''}</h3>
+          <span class="count"><strong>${f.count}</strong> events</span>
+        </div>
+        <div class="chips">${chips(f.types)}</div>
+        <div class="actions">
+          <a class="btn sub" href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 8.5h17M5 5h14a1.5 1.5 0 0 1 1.5 1.5V19A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6.5A1.5 1.5 0 0 1 5 5Z"/><path d="M12 11.5v5M9.5 14h5"/></svg>Subscribe</a>
+          <a class="btn ghost copy" href="#">Copy link</a>
+          <a class="btn ghost raw" href="${escapeHtml(f.file)}">.ics</a>
+        </div>
+      </article>`;
+
+  const all = feeds.find(f => f.file === 'all.ics');
+  const publicRinks = feeds.filter(f => f.file !== 'all.ics' && !f.club);
+  const clubRinks = feeds.filter(f => f.club);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -174,83 +202,183 @@ function buildIndexHtml(feeds, meta) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STL Ice Times — subscribable calendars</title>
+<meta name="description" content="Subscribable calendars for St. Louis skating times — public skate, freestyle, training and club ice, one feed per rink.">
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --bg1:#eaf2fb; --bg2:#dde9f6; --bg3:#d2e4f3;
+    --ink:#122536; --muted:#4f677d; --faint:#7b93a8;
+    --card:rgba(255,255,255,.72); --card-border:rgba(255,255,255,.75); --card-shadow:0 10px 30px -14px rgba(18,42,70,.45);
+    --line:rgba(18,42,70,.12);
+    --accent1:#0ea5b7; --accent2:#2a79e0; --accent-ink:#fff;
+    --chip-bg:rgba(18,42,70,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg1:#0a1826; --bg2:#0c2033; --bg3:#091422;
+      --ink:#e8f0f8; --muted:#9fb4c8; --faint:#6f8aa2;
+      --card:rgba(255,255,255,.055); --card-border:rgba(255,255,255,.10); --card-shadow:0 14px 34px -18px rgba(0,0,0,.7);
+      --line:rgba(255,255,255,.10);
+      --accent1:#22c3d6; --accent2:#4c90f0; --accent-ink:#06121d;
+      --chip-bg:rgba(255,255,255,.07);
+    }
+  }
   * { box-sizing: border-box; }
-  body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         margin: 0; padding: 2rem 1rem; background: Canvas; color: CanvasText; }
-  main { max-width: 760px; margin: 0 auto; }
-  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
-  p.sub { margin-top: 0; opacity: .8; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-  th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
-  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
-  td.count { text-align: right; font-variant-numeric: tabular-nums; opacity: .7; width: 4rem; }
-  td.links { white-space: nowrap; text-align: right; }
-  td.links a { margin-left: .75rem; text-decoration: none; font-weight: 600; }
-  td.links a.sub { color: #0a7; }
-  td.links a.raw, td.links a.copy { opacity: .6; font-weight: 500; }
-  tr.club .name { opacity: .85; }
-  .badge { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em;
-           border: 1px solid currentColor; border-radius: 1em; padding: 0 .5em; opacity: .6; vertical-align: middle; }
-  .how { margin-top: 2rem; font-size: .9rem; opacity: .85; }
-  .how code { background: color-mix(in srgb, CanvasText 10%, transparent); padding: .1em .35em; border-radius: .3em; }
-  footer { margin-top: 2rem; font-size: .8rem; opacity: .6; }
-  .toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
-           background: CanvasText; color: Canvas; padding: .5rem 1rem; border-radius: .5rem;
-           opacity: 0; transition: opacity .2s; pointer-events: none; }
-  .toast.show { opacity: 1; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; color: var(--ink); min-height: 100vh;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(42,121,224,.18), transparent 60%),
+      radial-gradient(900px 500px at 5% 0%, rgba(14,165,183,.16), transparent 55%),
+      linear-gradient(165deg, var(--bg1), var(--bg2) 45%, var(--bg3));
+    background-attachment: fixed;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: clamp(1.5rem, 4vw, 3rem) 1.1rem 3rem; }
+
+  header.hero { margin-bottom: 1.8rem; }
+  .mark { display:inline-flex; align-items:center; justify-content:center; width:46px; height:46px; border-radius:14px;
+          background: linear-gradient(140deg, var(--accent1), var(--accent2)); color: var(--accent-ink);
+          box-shadow: var(--card-shadow); margin-bottom: .9rem; }
+  .mark svg { width: 26px; height: 26px; }
+  h1 { font-size: clamp(1.65rem, 4.5vw, 2.3rem); line-height:1.1; margin: 0 0 .5rem; letter-spacing: -.02em; }
+  .lede { margin: 0; color: var(--muted); max-width: 54ch; font-size: 1.02rem; }
+  .lede a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .meta { display:flex; flex-wrap:wrap; gap:.5rem; margin-top: 1.1rem; }
+  .pill { display:inline-flex; align-items:center; gap:.4rem; font-size:.82rem; font-weight:600; color:var(--muted);
+          background: var(--card); border:1px solid var(--card-border); border-radius:999px; padding:.3rem .7rem;
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+  .section-label { font-size:.78rem; text-transform:uppercase; letter-spacing:.09em; color:var(--faint);
+                   font-weight:700; margin: 2rem 0 .8rem; }
+
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: .9rem; }
+
+  .card {
+    background: var(--card); border:1px solid var(--card-border); border-radius:16px;
+    padding: 1.05rem 1.1rem 1.1rem; box-shadow: var(--card-shadow);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    display:flex; flex-direction:column; gap:.75rem; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -16px rgba(18,42,70,.5); }
+  .card.featured { background: linear-gradient(135deg, var(--accent1), var(--accent2)); color: var(--accent-ink); border-color: transparent; }
+  .card.featured .count, .card.featured h3 { color: var(--accent-ink); }
+  .card.club { opacity: .96; }
+  .card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:.6rem; }
+  .card h3 { margin:0; font-size:1.08rem; letter-spacing:-.01em; line-height:1.2; }
+  .badge { display:inline-block; margin-left:.5rem; font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+           color:var(--muted); background:var(--chip-bg); border-radius:999px; padding:.12rem .5rem; vertical-align:middle; }
+  .count { font-size:.86rem; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .count strong { font-size:1rem; color:var(--ink); }
+  .card.featured .count strong { color: var(--accent-ink); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:.35rem; min-height: .5rem; }
+  .chip { display:inline-flex; align-items:center; gap:.35rem; font-size:.74rem; font-weight:600; color:var(--muted);
+          background:var(--chip-bg); border-radius:999px; padding:.18rem .55rem; }
+  .chip i { width:.56rem; height:.56rem; border-radius:50%; background:var(--c); flex:none; }
+  .card.featured .chip { background: rgba(255,255,255,.2); color: var(--accent-ink); }
+
+  .actions { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; margin-top:auto; }
+  .btn { display:inline-flex; align-items:center; gap:.4rem; font-size:.86rem; font-weight:650; text-decoration:none;
+         border-radius:10px; padding:.5rem .8rem; cursor:pointer; transition: background .15s ease, border-color .15s ease; }
+  .btn svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .btn.sub { background: linear-gradient(135deg, var(--accent1), var(--accent2)); color:var(--accent-ink);
+             box-shadow: 0 6px 16px -8px rgba(42,121,224,.7); }
+  .btn.sub:hover { filter: brightness(1.06); }
+  .btn.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); padding:.5rem .7rem; }
+  .btn.ghost:hover { border-color:var(--muted); color:var(--ink); }
+  .card.featured .btn.sub { background: var(--accent-ink); color: var(--accent2); }
+  .card.featured .btn.ghost { color: var(--accent-ink); border-color: rgba(255,255,255,.5); }
+  .card.featured .btn.ghost:hover { border-color: var(--accent-ink); }
+
+  .info { margin-top: 2.2rem; background: var(--card); border:1px solid var(--card-border); border-radius:16px;
+          padding: 1.2rem 1.3rem; box-shadow: var(--card-shadow); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .info h2 { margin:0 0 .7rem; font-size:1.05rem; }
+  .info ul { margin:0; padding-left:1.1rem; color:var(--muted); }
+  .info li { margin:.35rem 0; }
+  .info li strong { color:var(--ink); }
+  .info code { background:var(--chip-bg); padding:.1em .4em; border-radius:.35em; font-size:.9em; }
+  .info .note { margin:.85rem 0 0; font-size:.9rem; color:var(--muted); }
+
+  footer { margin-top:2rem; font-size:.82rem; color:var(--faint); text-align:center; }
+  footer a { color:inherit; }
+
+  .toast { position:fixed; bottom:1.2rem; left:50%; transform:translateX(-50%) translateY(10px);
+           background:var(--ink); color:var(--bg1); padding:.55rem 1rem; border-radius:10px; font-size:.86rem; font-weight:600;
+           opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; box-shadow:var(--card-shadow); }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
 <main>
-  <h1>St. Louis Ice Times — subscribable calendars</h1>
-  <p class="sub">Public skating, freestyle, training, and club ice across St. Louis rinks.
-     Pick a rink, hit <strong>Subscribe</strong>, and your calendar app keeps it up to date automatically.
-     Rebuilt nightly from <a href="${SOURCE_SITE}">icetimestl.com</a>.</p>
+  <header class="hero">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v20M2 12h20M4.8 4.8l14.4 14.4M19.2 4.8 4.8 19.2"/>
+        <path d="M12 2l1.8 1.8M12 2 10.2 3.8M12 22l1.8-1.8M12 22l-1.8-1.8M2 12l1.8 1.8M2 12l1.8-1.8M22 12l-1.8 1.8M22 12l-1.8-1.8"/>
+      </svg>
+    </span>
+    <h1>St. Louis Ice Times</h1>
+    <p class="lede">Subscribable calendars for skating across St. Louis — pick a rink, hit
+      <strong>Subscribe</strong>, and your calendar keeps itself up to date. Rebuilt from
+      <a href="${SOURCE_SITE}">icetimestl.com</a>.</p>
+    <div class="meta">
+      <span class="pill">⛸️ ${meta.total} sessions</span>
+      <span class="pill">📅 ${escapeHtml(windowPretty)}</span>
+      <span class="pill">↻ Updated ${escapeHtml(updatedPretty)}</span>
+    </div>
+  </header>
 
-  <table>
-    <thead><tr><th>Calendar</th><th class="count">Events</th><th></th></tr></thead>
-    <tbody>${rows}
-    </tbody>
-  </table>
-
-  <div class="how">
-    <p><strong>How to subscribe</strong></p>
-    <ul>
-      <li><strong>Apple Calendar / iPhone:</strong> tap <em>Subscribe</em> (opens via <code>webcal://</code>), or paste the link in Calendar → File → New Calendar Subscription.</li>
-      <li><strong>Google Calendar:</strong> <em>Copy link</em>, then Google Calendar → Other calendars → <em>From URL</em>. (Google refreshes subscribed URLs on its own schedule — often every several to 24 hours.)</li>
-      <li><strong>Outlook:</strong> Add calendar → Subscribe from web → paste the link.</li>
-    </ul>
-    <p>Each rink is a separate calendar, so you can toggle and color them independently. Times are U.S. Central (handles DST automatically).</p>
+  <div class="grid" style="margin-top:.5rem">
+    ${all ? card(all, true) : ''}
   </div>
 
+  <p class="section-label">Rinks</p>
+  <div class="grid">
+    ${publicRinks.map(f => card(f, false)).join('')}
+  </div>
+
+  ${clubRinks.length ? `
+  <p class="section-label">Members-only club ice</p>
+  <div class="grid">
+    ${clubRinks.map(f => card(f, false)).join('')}
+  </div>` : ''}
+
+  <section class="info">
+    <h2>How to subscribe</h2>
+    <ul>
+      <li><strong>Apple Calendar / iPhone:</strong> tap <em>Subscribe</em> (opens via <code>webcal://</code>), or paste the link into Calendar → File → New Calendar Subscription.</li>
+      <li><strong>Google Calendar:</strong> <em>Copy link</em>, then Other calendars → <em>From URL</em>. Google refreshes subscribed URLs on its own schedule — often several hours to a day.</li>
+      <li><strong>Outlook:</strong> Add calendar → Subscribe from web → paste the link.</li>
+    </ul>
+    <p class="note">Each rink is its own calendar, so you can toggle and color them independently. Times are U.S. Central and adjust for daylight saving automatically.</p>
+  </section>
+
   <footer>
-    Updated ${escapeHtml(meta.generatedAt)} · ${meta.total} sessions · source window ${escapeHtml(meta.window)}.
-    Unofficial; verify times with the rink before you go.
+    ${meta.total} sessions · ${escapeHtml(windowPretty)} · updated ${escapeHtml(updatedPretty)}<br>
+    Unofficial — always verify times with the rink. Source: <a href="${SOURCE_SITE}">icetimestl.com</a>.
   </footer>
 </main>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
   (function () {
-    var base = location.href.replace(/[^/]*$/, ''); // directory of this page
+    var base = location.href.replace(/[^/]*$/, ''); // directory this page lives in
     var webcalBase = base.replace(/^https?:/, 'webcal:');
+    var toastEl = document.getElementById('toast'), toastT;
     function toast(msg) {
-      var t = document.getElementById('toast');
-      t.textContent = msg; t.classList.add('show');
-      setTimeout(function () { t.classList.remove('show'); }, 1600);
+      toastEl.textContent = msg; toastEl.classList.add('show');
+      clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 1600);
     }
-    document.querySelectorAll('td.links').forEach(function (td) {
-      var file = td.getAttribute('data-file');
-      var httpsUrl = base + file;
-      var webcalUrl = webcalBase + file;
-      td.querySelector('a.sub').setAttribute('href', webcalUrl);
-      td.querySelector('a.raw').setAttribute('href', httpsUrl);
-      td.querySelector('a.copy').addEventListener('click', function (e) {
+    document.querySelectorAll('.card').forEach(function (card) {
+      var file = card.getAttribute('data-file');
+      var httpsUrl = base + file, webcalUrl = webcalBase + file;
+      card.querySelector('a.sub').setAttribute('href', webcalUrl);
+      card.querySelector('a.raw').setAttribute('href', httpsUrl);
+      card.querySelector('a.copy').addEventListener('click', function (e) {
         e.preventDefault();
-        navigator.clipboard.writeText(httpsUrl).then(
+        (navigator.clipboard ? navigator.clipboard.writeText(httpsUrl) : Promise.reject()).then(
           function () { toast('Link copied'); },
-          function () { prompt('Copy this subscribe link:', httpsUrl); }
+          function () { window.prompt('Copy this subscribe link:', httpsUrl); }
         );
       });
     });
@@ -300,11 +428,12 @@ async function main() {
   }
 
   const feeds = [];
+  const tally = (list) => list.reduce((m, s) => { m[s.type] = (m[s.type] || 0) + 1; return m; }, {});
 
   // "All rinks" first.
   await writeFile(path.join(OUT_DIR, 'all.ics'),
     buildCalendar({ calName: 'STL Ice — All Rinks', sessions, includeRinkInSummary: true, dtstamp }));
-  feeds.push({ file: 'all.ics', name: 'All rinks', short: 'All', count: sessions.length, club: false });
+  feeds.push({ file: 'all.ics', name: 'All rinks', short: 'All', count: sessions.length, club: false, types: tally(sessions) });
 
   // Per-rink, ordered: public rinks first (by name), then club ice.
   const rinkIds = [...byRink.keys()].sort((a, b) => {
@@ -320,7 +449,7 @@ async function main() {
     const file = `${rinkId}.ics`;
     await writeFile(path.join(OUT_DIR, file),
       buildCalendar({ calName: `STL Ice — ${info.name}`, sessions: list, includeRinkInSummary: false, dtstamp }));
-    feeds.push({ file, name: info.name, short: info.short, count: list.length, club: !!info.club });
+    feeds.push({ file, name: info.name, short: info.short, count: list.length, club: !!info.club, types: tally(list) });
   }
 
   const meta = { generatedAt: new Date().toISOString(), total: sessions.length, window: windowStr };
