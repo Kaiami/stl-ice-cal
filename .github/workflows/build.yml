@@ -1,0 +1,50 @@
+name: Build and deploy ice calendars
+
+on:
+  # Rebuild after the source updates overnight, plus a midday refresh.
+  # Times are UTC. 09:15 UTC ≈ 3:15 AM CST / 4:15 AM CDT.
+  schedule:
+    - cron: '15 9 * * *'
+    - cron: '15 19 * * *'
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}   # lets you trigger a build by hand from the Actions tab
+
+# Allow this workflow to publish to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; a scheduled run won't fight a manual one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build .ics feeds + subscribe page
+        run: node build.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

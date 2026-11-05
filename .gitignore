@@ -1,0 +1,8 @@
+# Built output — GitHub Actions regenerates this on every run.
+/public/
+
+# Local offline-test fixture (regenerate with the curl in the README).
+/sched.sample.json
+
+node_modules/
+.DS_Store

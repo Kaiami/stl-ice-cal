@@ -1,0 +1,14 @@
+{
+  "name": "icetimestl-cal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Subscribable .ics calendar feeds (per rink + all rinks) for St. Louis skating times from icetimestl.com.",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:sample": "ICE_SCHEDULE_FILE=./sched.sample.json node build.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
